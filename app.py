@@ -1,4 +1,10 @@
 import streamlit as st
+st.set_page_config(page_title="Prediksi IHSG", layout="wide")
+
+# Fix untuk beberapa error dependency di cloud
+import pandas as pd
+import numpy as np
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -26,7 +32,7 @@ st.sidebar.markdown("---")
 st.sidebar.info("Semakin tinggi threshold, semakin sedikit sinyal tapi lebih akurat.")
 
 # ===================== FUNGSI =====================
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data(start_date):
     df = yf.download("^JKSE", start=start_date, progress=False)
     if df.empty:
