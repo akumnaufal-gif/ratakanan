@@ -5,30 +5,29 @@ import pandas as pd
 st.set_page_config(page_title="IHSG Simple", layout="wide")
 
 st.title("📈 IHSG Simple Predictor")
-st.markdown("**Ultra Ringan • Dengan Fallback**")
+st.markdown("**Ultra Ringan • Sudah Diperbaiki**")
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data():
     try:
-        # Beberapa cara download
         df = yf.download("^JKSE", period="max", progress=False, auto_adjust=True)
         if df.empty or len(df) < 50:
-            # Coba alternatif
             df = yf.download("JKSE.JK", period="max", progress=False)
         return df
-    except:
+    except Exception as e:
+        st.error(f"Gagal download data: {e}")
         return pd.DataFrame()
 
 df = load_data()
 
 if df.empty or len(df) < 50:
-    st.error("❌ Gagal mengambil data IHSG dari yfinance.")
-    st.info("Coba refresh beberapa kali atau tunggu 5 menit (rate limit).")
+    st.error("❌ Masih gagal mengambil data IHSG.")
+    st.info("Coba klik **Rerun** atau tunggu 2-3 menit lalu refresh.")
     st.stop()
 
-# Data berhasil diambil
-latest_price = df['Close'].iloc[-1]
-change = df['Close'].pct_change().iloc[-1] * 100
+# Ambil nilai scalar (bukan Series)
+latest_price = float(df['Close'].iloc[-1])
+change = float(df['Close'].pct_change().iloc[-1] * 100)
 
 st.metric(
     label="IHSG Terakhir", 
@@ -36,9 +35,9 @@ st.metric(
     delta=f"{change:.2f}%"
 )
 
-# Simple Trend
-sma20 = df['Close'].rolling(20).mean().iloc[-1]
-sma50 = df['Close'].rolling(50).mean().iloc[-1]
+# Trend Analysis
+sma20 = float(df['Close'].rolling(20).mean().iloc[-1])
+sma50 = float(df['Close'].rolling(50).mean().iloc[-1])
 
 col1, col2 = st.columns(2)
 with col1:
@@ -51,7 +50,7 @@ with col2:
     st.write(f"**Tanggal Terakhir:** {df.index[-1].date()}")
 
 # Chart
-st.subheader("Grafik IHSG")
+st.subheader("Grafik IHSG 400 Hari Terakhir")
 st.line_chart(df['Close'].tail(400))
 
-st.caption("⚠️ Versi test. Kalau ini berhasil muncul datanya, kita lanjut tambah fitur prediksi.")
+st.caption("✅ App sudah berjalan. Kalau ini berhasil, kita tambah fitur prediksi besok.")
