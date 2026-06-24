@@ -5,9 +5,16 @@ import numpy as np
 
 st.set_page_config(page_title="IHSG Predictor", layout="wide")
 
-st.title("📈 IHSG Predictor - Versi Ringan & Cepat")
-st.markdown("**Random Forest Ringan + Fitur Lengkap**")
+st.title("📈 IHSG Predictor + Data Ekonomi")
+st.markdown("**Random Forest + BI Rate & Inflasi**")
 
+# ================== DATA EKONOMI TERBARU ==================
+BI_RATE = 5.75      # per 18 Juni 2026
+INFLASI = 3.08      # per Mei 2026
+
+st.sidebar.info(f"**Data Ekonomi Terbaru**\nBI Rate: **{BI_RATE}%**\nInflasi: **{INFLASI}%**")
+
+# ================== LOAD DATA ==================
 @st.cache_data(ttl=3600)
 def load_data():
     df = yf.download("^JKSE", period="4y", progress=False)
@@ -18,43 +25,54 @@ def load_data():
 df = load_data()
 
 if df.empty or len(df) < 300:
-    st.error("Gagal mengambil data")
+    st.error("Gagal mengambil data IHSG")
     st.stop()
 
 if isinstance(df.columns, pd.MultiIndex):
     df = df.droplevel(1, axis=1)
 
-# Features
+# ================== FEATURE ENGINEERING ==================
 df['Return'] = df['Close'].pct_change()
 df['SMA20'] = df['Close'].rolling(20).mean()
 df['SMA50'] = df['Close'].rolling(50).mean()
 df['SMA200'] = df['Close'].rolling(200).mean()
 df['Volatility'] = df['Return'].rolling(20).std()
-df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().clip(lower=0).rolling(14).mean() / 
-                           abs(df['Close'].diff().clip(upper=0).rolling(14).mean()).replace(0, np.nan))))
 
+# RSI
+delta = df['Close'].diff()
+gain = delta.where(delta > 0, 0).rolling(14).mean()
+loss = -delta.where(delta < 0, 0).rolling(14).mean()
+rs = gain / loss
+df['RSI'] = 100 - (100 / (1 + rs.fillna(0)))
+
+# MACD
 ema12 = df['Close'].ewm(span=12).mean()
 ema26 = df['Close'].ewm(span=26).mean()
 df['MACD'] = ema12 - ema26
 
+# Tambah Data Ekonomi (sama untuk semua baris)
+df['BI_Rate'] = BI_RATE
+df['Inflasi'] = INFLASI
+
 df_full = df.copy()
 df = df.dropna()
 
+# ================== SIDEBAR ==================
 st.sidebar.header("Pengaturan")
 hari = st.sidebar.selectbox("Prediksi berapa hari ke depan?", [1, 3, 5], index=1)
 min_conf = st.sidebar.slider("Minimum Confidence (%)", 50, 80, 58)
 
 if st.button("🚀 Jalankan Prediksi", type="primary"):
-    with st.spinner("Melatih model (cepat)..."):
+    with st.spinner("Melatih model..."):
         from sklearn.ensemble import RandomForestClassifier
         
-        features = ['Return', 'SMA20', 'SMA50', 'SMA200', 'Volatility', 'RSI', 'MACD']
+        features = ['Return', 'SMA20', 'SMA50', 'SMA200', 'Volatility', 'RSI', 'MACD', 'BI_Rate', 'Inflasi']
         X = df[features]
         y = (df['Close'].shift(-hari) > df['Close']).astype(int)
         
         model = RandomForestClassifier(
-            n_estimators=200,      # dikurangi biar cepat
-            max_depth=8,
+            n_estimators=300,
+            max_depth=10,
             random_state=42,
             class_weight='balanced'
         )
@@ -66,11 +84,11 @@ if st.button("🚀 Jalankan Prediksi", type="primary"):
         for i in range(5):
             prob_naik = model.predict_proba(latest)[0][1]
             arah = "📈 NAIK" if prob_naik >= 0.5 else "📉 TURUN"
-            confidence = max(prob_naik, 1-prob_naik) * 100
+            confidence = max(prob_naik, 1 - prob_naik) * 100
             
             hasil.append(f"Hari +{i+1} → {arah} (**{prob_naik:.1%}**) - Confidence: {confidence:.1f}%")
             
-            latest['Return'] = latest['Return'] * 0.6 + (0.001 if prob_naik >= 0.5 else -0.0008)
+            latest['Return'] = latest['Return'] * 0.6 + (0.0015 if prob_naik >= 0.5 else -0.001)
         
         latest_price = float(df['Close'].iloc[-1])
         st.metric("IHSG Terakhir", f"{latest_price:,.2f}")
@@ -86,8 +104,9 @@ if st.button("🚀 Jalankan Prediksi", type="primary"):
         for h in hasil:
             st.write(h)
 
-st.subheader("Grafik IHSG")
+# Chart
+st.subheader("Grafik IHSG + Moving Average")
 chart_data = df_full[['Close', 'SMA20', 'SMA50', 'SMA200']].tail(500).dropna()
 st.line_chart(chart_data)
 
-st.caption("Versi ringan • Training cepat • Coba ubah Minimum Confidence")
+st.caption("✅ Sudah termasuk BI Rate (5.75%) & Inflasi (3.08%). Semoga lebih kontekstual.")
