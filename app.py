@@ -6,7 +6,7 @@ import numpy as np
 st.set_page_config(page_title="IHSG Predictor Pro", layout="wide")
 
 st.title("📈 IHSG Predictor Pro")
-st.markdown("**Versi Stabil • Prediksi 5 Hari**")
+st.markdown("**Versi Stabil - MultiIndex Fix**")
 
 # ================== LOAD DATA ==================
 @st.cache_data(ttl=3600)
@@ -25,6 +25,10 @@ if df.empty or len(df) < 100:
     st.error("Gagal mengambil data IHSG")
     st.stop()
 
+# ================== FIX MULTIINDEX ==================
+if isinstance(df.columns, pd.MultiIndex):
+    df = df.droplevel(1, axis=1)   # Hapus ticker level
+
 # ================== FEATURE ENGINEERING ==================
 df['Return'] = df['Close'].pct_change()
 df['SMA20'] = df['Close'].rolling(20).mean()
@@ -37,10 +41,7 @@ loss = -delta.where(delta < 0, 0).rolling(14).mean()
 rs = gain / loss
 df['RSI'] = 100 - (100 / (1 + rs))
 
-# Simpan untuk chart (tanpa dropna dulu)
 df_full = df.copy()
-
-# Drop NaN hanya untuk training model
 df_model = df.dropna()
 
 # ================== SIDEBAR ==================
@@ -62,7 +63,8 @@ if st.button("🚀 Jalankan Prediksi", type="primary"):
         for train_idx, test_idx in tscv.split(X):
             model = RandomForestClassifier(n_estimators=150, random_state=42)
             model.fit(X.iloc[train_idx], y.iloc[train_idx])
-            accuracies.append(accuracy_score(y.iloc[test_idx], model.predict(X.iloc[test_idx])))
+            pred = model.predict(X.iloc[test_idx])
+            accuracies.append(accuracy_score(y.iloc[test_idx], pred))
         
         avg_acc = np.mean(accuracies)
         
@@ -90,9 +92,9 @@ if st.button("🚀 Jalankan Prediksi", type="primary"):
         for h in hasil:
             st.write(h)
 
-# ================== CHART (Di luar button) ==================
+# ================== CHART ==================
 st.subheader("Grafik IHSG + SMA")
 chart_df = df_full[['Close', 'SMA20', 'SMA50']].tail(400).dropna()
 st.line_chart(chart_df)
 
-st.caption("⚠️ Hanya untuk edukasi & eksperimen.")
+st.caption("⚠️ Hanya untuk edukasi. Bukan saran investasi.")
