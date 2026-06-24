@@ -1,69 +1,101 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 
-st.set_page_config(page_title="IHSG Simple", layout="wide")
+st.set_page_config(page_title="IHSG Predictor Pro", layout="wide")
 
-st.title("📈 IHSG Simple Predictor")
-st.markdown("**Ultra Ringan • Fix TypeError Terbaru**")
+st.title("📈 IHSG Predictor Pro")
+st.markdown("**Random Forest + Prediksi 5 Hari + Trend Analysis**")
 
-@st.cache_data(ttl=3600, show_spinner=False)
+# ================== LOAD DATA ==================
+@st.cache_data(ttl=3600)
 def load_data():
     try:
         df = yf.download("^JKSE", period="max", progress=False, auto_adjust=True)
-        if df.empty or len(df) < 30:
+        if df.empty or len(df) < 100:
             df = yf.download("JKSE.JK", period="max", progress=False, auto_adjust=True)
         return df
-    except Exception as e:
-        st.error(f"Download error: {e}")
+    except:
         return pd.DataFrame()
 
 df = load_data()
 
-if df.empty or len(df) < 30:
-    st.error("❌ Masih gagal mengambil data. Coba **Rerun** beberapa kali.")
+if df.empty or len(df) < 100:
+    st.error("Gagal mengambil data IHSG")
     st.stop()
 
-# ================== FIX TYPE ERROR ==================
-latest_price = df['Close'].iloc[-1]
-if isinstance(latest_price, pd.Series):
-    latest_price = float(latest_price.iloc[0])
-else:
-    latest_price = float(latest_price)
+# ================== FEATURE ENGINEERING ==================
+df['Return'] = df['Close'].pct_change()
+df['SMA20'] = df['Close'].rolling(20).mean()
+df['SMA50'] = df['Close'].rolling(50).mean()
+df['Volatility'] = df['Return'].rolling(20).std()
 
-change = df['Close'].pct_change().iloc[-1]
-if isinstance(change, pd.Series):
-    change = float(change.iloc[0])
-else:
-    change = float(change) * 100
+# RSI
+delta = df['Close'].diff()
+gain = delta.where(delta > 0, 0).rolling(14).mean()
+loss = -delta.where(delta < 0, 0).rolling(14).mean()
+rs = gain / loss
+df['RSI'] = 100 - (100 / (1 + rs))
 
-st.metric(
-    label="IHSG Terakhir", 
-    value=f"{latest_price:,.2f}", 
-    delta=f"{change:.2f}%"
-)
+df = df.dropna()
 
-# Trend
-sma20 = df['Close'].rolling(20).mean().iloc[-1]
-sma50 = df['Close'].rolling(50).mean().iloc[-1]
+# ================== SIDEBAR ==================
+st.sidebar.header("Pengaturan Prediksi")
+hari = st.sidebar.selectbox("Prediksi berapa hari ke depan?", [1, 3, 5], index=2)
 
-if isinstance(sma20, pd.Series): sma20 = float(sma20.iloc[0])
-else: sma20 = float(sma20)
+if st.button("🚀 Jalankan Prediksi", type="primary"):
+    with st.spinner("Melatih model..."):
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.metrics import accuracy_score
+        
+        features = ['Return', 'SMA20', 'SMA50', 'Volatility', 'RSI']
+        X = df[features]
+        y = (df['Close'].shift(-hari) > df['Close']).astype(int)
+        
+        # Cross Validation
+        tscv = TimeSeriesSplit(n_splits=5)
+        accuracies = []
+        for train_idx, test_idx in tscv.split(X):
+            model = RandomForestClassifier(n_estimators=150, random_state=42)
+            model.fit(X.iloc[train_idx], y.iloc[train_idx])
+            pred = model.predict(X.iloc[test_idx])
+            accuracies.append(accuracy_score(y.iloc[test_idx], pred))
+        
+        avg_acc = np.mean(accuracies)
+        
+        # Final Model
+        final_model = RandomForestClassifier(n_estimators=150, random_state=42)
+        final_model.fit(X, y)
+        
+        # Prediksi 5 hari ke depan
+        latest = X.iloc[-1:].copy()
+        hasil = []
+        for i in range(5):
+            pred = final_model.predict(latest)[0]
+            prob = final_model.predict_proba(latest)[0][1]
+            arah = "📈 **NAIK**" if pred == 1 else "📉 **TURUN**"
+            hasil.append(f"Hari +{i+1}: {arah} ({prob:.1%})")
+            # Update simulasi sederhana
+            latest['Return'] = 0.001 if pred == 1 else -0.001
+        
+        # Tampilan
+        latest_price = float(df['Close'].iloc[-1])
+        st.metric("IHSG Terakhir", f"{latest_price:,.2f}")
+        
+        st.success(f"Akurasi Model (Cross Validation): **{avg_acc:.1%}**")
+        
+        st.subheader(f"🔮 Prediksi {hari} Hari ke Depan")
+        for h in hasil[:hari]:
+            st.write(h)
+        
+        st.subheader("Prediksi 5 Hari Lengkap")
+        for h in hasil:
+            st.write(h)
 
-if isinstance(sma50, pd.Series): sma50 = float(sma50.iloc[0])
-else: sma50 = float(sma50)
+# Chart
+st.subheader("Grafik IHSG + SMA")
+st.line_chart(df[['Close', 'SMA20', 'SMA50']].tail(400))
 
-col1, col2 = st.columns(2)
-with col1:
-    if sma20 > sma50:
-        st.success("📈 **BULLISH** (SMA20 > SMA50)")
-    else:
-        st.error("📉 **BEARISH** (SMA20 < SMA50)")
-
-with col2:
-    st.write(f"Tanggal: {df.index[-1].date()}")
-
-st.subheader("Grafik IHSG")
-st.line_chart(df['Close'].tail(400))
-
-st.caption("✅ Sudah di-fix. Kalau ini berhasil muncul, kita tambah fitur prediksi.")
+st.caption("⚠️ Ini hanya simulasi edukasi. Bukan saran investasi.")
