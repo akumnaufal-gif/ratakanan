@@ -6,9 +6,9 @@ import numpy as np
 st.set_page_config(page_title="IHSG Predictor Pro", layout="wide")
 
 st.title("📈 IHSG Predictor Pro")
-st.markdown("**Versi Stabil - MultiIndex Fix**")
+st.markdown("**Random Forest + Prediksi 5 Hari**")
 
-# ================== LOAD DATA ==================
+# Load Data
 @st.cache_data(ttl=3600)
 def load_data():
     try:
@@ -25,11 +25,11 @@ if df.empty or len(df) < 100:
     st.error("Gagal mengambil data IHSG")
     st.stop()
 
-# ================== FIX MULTIINDEX ==================
+# Fix MultiIndex
 if isinstance(df.columns, pd.MultiIndex):
-    df = df.droplevel(1, axis=1)   # Hapus ticker level
+    df = df.droplevel(1, axis=1)
 
-# ================== FEATURE ENGINEERING ==================
+# Feature Engineering
 df['Return'] = df['Close'].pct_change()
 df['SMA20'] = df['Close'].rolling(20).mean()
 df['SMA50'] = df['Close'].rolling(50).mean()
@@ -44,12 +44,12 @@ df['RSI'] = 100 - (100 / (1 + rs))
 df_full = df.copy()
 df_model = df.dropna()
 
-# ================== SIDEBAR ==================
-st.sidebar.header("Pengaturan")
+# Sidebar
+st.sidebar.header("Pengaturan Prediksi")
 hari = st.sidebar.selectbox("Prediksi berapa hari ke depan?", [1, 3, 5], index=2)
 
 if st.button("🚀 Jalankan Prediksi", type="primary"):
-    with st.spinner("Melatih model..."):
+    with st.spinner("Melatih model Random Forest..."):
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.model_selection import TimeSeriesSplit
         from sklearn.metrics import accuracy_score
@@ -92,9 +92,9 @@ if st.button("🚀 Jalankan Prediksi", type="primary"):
         for h in hasil:
             st.write(h)
 
-# ================== CHART ==================
+# Chart
 st.subheader("Grafik IHSG + SMA")
 chart_df = df_full[['Close', 'SMA20', 'SMA50']].tail(400).dropna()
 st.line_chart(chart_df)
 
-st.caption("⚠️ Hanya untuk edukasi. Bukan saran investasi.")
+st.caption("⚠️ Hanya untuk edukasi. Prediksi bukan jaminan.")
