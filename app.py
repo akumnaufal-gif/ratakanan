@@ -1,19 +1,15 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="IHSG Simple", layout="wide")
 
 st.title("📈 IHSG Simple Predictor")
-st.markdown("**Versi paling ringan • Deploy cepat**")
+st.markdown("**Versi paling ringan • Tanpa Machine Learning • Deploy cepat**")
 
 # Load Data
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)  # cache 30 menit
 def load_data():
     df = yf.download("^JKSE", start="2020-01-01", progress=False)
     return df
@@ -24,62 +20,40 @@ if df.empty:
     st.error("Gagal mengambil data IHSG")
     st.stop()
 
-# Feature Sederhana
+# Simple Technical Analysis
+df['SMA20'] = df['Close'].rolling(window=20).mean()
+df['SMA50'] = df['Close'].rolling(window=50).mean()
 df['Return'] = df['Close'].pct_change()
-df['SMA20'] = df['Close'].rolling(20).mean()
-df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().clip(lower=0).rolling(14).mean() / 
-                           abs(df['Close'].diff().clip(upper=0).rolling(14).mean()))))
 
-df = df.dropna()
+# Simple Signal
+df['Signal'] = 0
+df['Signal'] = np.where(df['SMA20'] > df['SMA50'], 1, 0)  # 1 = Bullish
 
-# Sidebar
-st.sidebar.header("Pengaturan")
-hari = st.sidebar.selectbox("Prediksi berapa hari ke depan?", [1, 3, 5], index=1)
+latest_price = df['Close'].iloc[-1]
+latest_signal = "📈 Bullish (Naik)" if df['Signal'].iloc[-1] == 1 else "📉 Bearish (Turun)"
 
-if st.button("🚀 Prediksi Sekarang", type="primary"):
-    with st.spinner("Sedang memproses..."):
-        from sklearn.ensemble import RandomForestClassifier
-        from sklearn.model_selection import TimeSeriesSplit
-        from sklearn.metrics import accuracy_score
-        
-        X = df[['Return', 'SMA20', 'RSI']]
-        y = (df['Close'].shift(-hari) > df['Close']).astype(int)
-        
-        # Cross Validation
-        tscv = TimeSeriesSplit(n_splits=5)
-        accuracies = []
-        for train_idx, test_idx in tscv.split(X):
-            model = RandomForestClassifier(n_estimators=100, random_state=42)
-            model.fit(X.iloc[train_idx], y.iloc[train_idx])
-            pred = model.predict(X.iloc[test_idx])
-            accuracies.append(accuracy_score(y.iloc[test_idx], pred))
-        
-        avg_acc = np.mean(accuracies)
-        
-        # Final Model
-        final_model = RandomForestClassifier(n_estimators=100, random_state=42)
-        final_model.fit(X, y)
-        
-        # Prediksi
-        latest = X.iloc[-1:].copy()
-        hasil = []
-        for i in range(5):
-            pred = final_model.predict(latest)[0]
-            prob = final_model.predict_proba(latest)[0][1]
-            arah = "📈 Naik" if pred == 1 else "📉 Turun"
-            hasil.append(f"Hari +{i+1}: {arah} ({prob:.1%})")
-            latest['Return'] = 0.001 if pred == 1 else -0.001
-        
-        # Tampilkan
-        st.success(f"Akurasi Model: **{avg_acc:.1%}**")
-        st.subheader(f"Prediksi {hari} Hari ke Depan")
-        for h in hasil[:hari]:
-            st.write(h)
-        
-        # Chart
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df.index[-300:], y=df['Close'][-300:], name="IHSG Close"))
-        fig.update_layout(title="Pergerakan IHSG 300 Hari Terakhir", height=500)
-        st.plotly_chart(fig, use_container_width=True)
+st.metric(label="IHSG Terakhir", value=f"{latest_price:,.2f}")
 
-st.caption("⚠️ Hanya untuk edukasi. Prediksi saham tidak pernah 100% akurat.")
+col1, col2 = st.columns(2)
+with col1:
+    st.success(f"**Signal Saat Ini:** {latest_signal}")
+with col2:
+    st.write(f"**Perubahan Hari Ini:** {df['Return'].iloc[-1]:.2%}")
+
+# Prediksi Sederhana 5 Hari (berdasarkan trend SMA)
+st.subheader("🔮 Prediksi Arah 5 Hari ke Depan (Simple Trend)")
+for i in range(1, 6):
+    if df['Signal'].iloc[-1] == 1:
+        st.write(f"Hari +{i}: 📈 **Cenderung Naik** (berdasarkan SMA20 > SMA50)")
+    else:
+        st.write(f"Hari +{i}: 📉 **Cenderung Turun**")
+
+# Chart
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df.index[-400:], y=df['Close'][-400:], name="Close", line=dict(color="blue")))
+fig.add_trace(go.Scatter(x=df.index[-400:], y=df['SMA20'][-400:], name="SMA 20"))
+fig.add_trace(go.Scatter(x=df.index[-400:], y=df['SMA50'][-400:], name="SMA 50"))
+fig.update_layout(title="IHSG + SMA20 & SMA50 (400 Hari Terakhir)", height=600)
+st.plotly_chart(fig, use_container_width=True)
+
+st.caption("⚠️ Ini hanya analisis teknikal sederhana untuk edukasi. Bukan rekomendasi investasi.")
